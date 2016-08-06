@@ -1,18 +1,28 @@
-require 'artoo'
+# coding: utf-8
 require 'httpclient'
-require 'opencv'
-include OpenCV
+require "open3"
 
 # サーバのURLを記載
-SERVER_URL= "http://localhost:3000/"
-
-# OpenCVを使ってキャプチャを取る
-def capture(camera)
-  image = camera.query
-  mat = image.to_CvMat
-  # 画像サイズを半分にする
-  mat2 = mat.resize(CvSize.new(640,360))
-  mat2.save('output.jpg')
+SERVER_URL= "http://192.168.3.4:3000/"
+IMAGE_PATH= "tmp/pic.jpg"
+# カメラモジュールのタイムラプスモードを使ってを使ってキャプチャを取る
+def start_capture
+  Open3.popen3("ps aux |grep raspistill") do |i, o, e, w|
+    cnt = 0
+    o.each do |line|
+      p line
+      cnt = cnt + 1
+    end
+    p cnt
+    # grep して本体がpsコマンドと、grepコマンド以外にraspistillがあれば3になるはず
+    return if cnt > 2
+    fork do
+      Process.setsid
+      exit if fork
+      p "CCCC"
+      `raspistill -n -w 640 -h 480 -q 20 -o tmp/pic.jpg -tl 1000 -t 99999999 --thumb none 2>&1 & echo $!`
+    end
+  end
 end
 
 # 画像をサーバにポスト
@@ -33,37 +43,29 @@ def fetch_command(httpclient)
   
   case comm
   when "foward" then
-    roomba.forward 1.0
+  #  roomba.forward 1.0
   when "back" then
-    roomba.backwards 1.0
+   # roomba.backwards 1.0
   when "left" then
-    roomba.nudge_left
+   # roomba.nudge_left
   when "right" then
-    roomba.nudge_right
+   # roomba.nudge_right
   end
+  p comm
 end
 
-# マシンに接続されているカメラのうち, 1番めのカメラを利用する
-camera = CvCapture.open(0)
 httpclient = HTTPClient.new()
-window = GUI::Window.new('camera')
+start_capture
 
-#--------------------
-connection :roomba, :adaptor => :roomba, :port => '/dev/tty.usbserial-A601HCTI'
-device :roomba, :driver => :roomba, :connection => :roomba
-
-work do
-  roomba.safe_mode
-  # 無限ループ Ctrl-Cで抜ける
-  while true
-    # サーバからコマンド取得する
-    fetch_command(httpclient)
-    p "#{Time.now}"
-    # カメラから画像をキャプチャする
-    out_path = capture(camera)
-    # サーバに画像を送信する
-    post_image(out_path, httpclient)
-    # 0.5スリープして再びループ処理する
-    sleep(0.5)
-  end
+# 無限ループ Ctrl-Cで抜ける
+while true
+  # サーバからコマンド取得する
+  fetch_command(httpclient)
+  p "#{Time.now}"
+  
+  # サーバに画像を送信する
+  post_image(IMAGE_PATH, httpclient)
+  # 0.5スリープして再びループ処理する
+  sleep(0.5)
 end
+
