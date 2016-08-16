@@ -20,7 +20,7 @@ def start_capture
     fork do
       Process.setsid
       exit if fork
-      `raspistill -n -w 640 -h 480 -q 20 -o tmp/pic.jpg -tl 1000 -t 99999999 --thumb none 2>&1 & echo $!`
+      `raspistill -n -w 640 -h 480 -q 20 -o tmp/pic.jpg -tl 500 -t 99999999 --thumb none 2>&1 & echo $!`
     end
   end
 end
@@ -42,6 +42,7 @@ module Mode
   FULL = 132
   SAFE = 131
   START = 128
+  POWER = 133
 end
 
 module Speed
@@ -74,12 +75,13 @@ end
 def full_mode
   start
   send_bytes(Mode::FULL)
-  sleep 0.1
+  sleep 0.2
 end
 
 def init_roomba
   @sp = SerialPort.new('/dev/ttyAMA0', 115200, 8, 1, 0)
-  full_mode
+  sleep 1
+  full_mode  
 end
 
 def split_bytes(num)
@@ -117,6 +119,11 @@ def turn_right(seconds = 1)
   stop if seconds > 0
 end
 
+def stop_roomba
+  start
+  send_bytes(Mode::POWER)
+end
+
 # サーバからコマンドをってくる
 def fetch_command(httpclient)
   res = httpclient.get("#{SERVER_URL}commands/fetch_command")
@@ -131,6 +138,10 @@ def fetch_command(httpclient)
     turn_left(0.5)
   when "right" then
     turn_right(0.5)
+  when "sleft" then
+    turn_left(0.2)
+  when "sright" then
+    turn_right(0.2)
   end
   p comm
 end
@@ -141,18 +152,20 @@ start_capture
 init_roomba
 
 # 無限ループ Ctrl-Cで抜ける
-while true
-  # サーバからコマンド取得する
-  fetch_command(httpclient)
-  p "#{Time.now}"
+begin
+  while true
+    # サーバからコマンド取得する
+    fetch_command(httpclient)
+    p "#{Time.now}"
   
-  # サーバに画像を送信する
-  begin
-    post_image(IMAGE_PATH, httpclient)
-  rescue
-    p "post error"
+    # サーバに画像を送信する
+    begin
+      post_image(IMAGE_PATH, httpclient)
+    rescue
+      p "post error"
+    end
   end
-  # 0.5スリープして再びループ処理する
-  #sleep(0.5)
+rescue Interrupt
+  stop_roomba
 end
 
